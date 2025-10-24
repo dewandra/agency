@@ -2,6 +2,8 @@
 
 use Illuminate\Support\Facades\Route;
 use App\Http\Controllers\Api\AuthController;
+use App\Http\Controllers\Api\CategoryController;
+use App\Http\Controllers\Api\TagController;
 use App\Http\Controllers\Api\UserController;
 
 // Authentication Routes
@@ -40,4 +42,35 @@ Route::middleware(['auth:api', 'role:ADMIN'])->prefix('users')->group(function (
     Route::delete('/{id}/force', [UserController::class, 'forceDestroy']);
     Route::post('/{id}/toggle-status', [UserController::class, 'toggleStatus']);
     Route::put('/{id}/role', [UserController::class, 'changeRole']);
+});
+
+
+// Category Management Routes (Admin Only)
+Route::middleware(['auth:api', 'role:ADMIN'])->prefix('categories')->group(function () {
+    Route::put('/reorder', [CategoryController::class, 'reorder']);
+    
+    // CRUD operations
+    Route::get('/', [CategoryController::class, 'index']);
+    Route::post('/', [CategoryController::class, 'store']);
+    Route::get('/{id}', [CategoryController::class, 'show']);
+    Route::put('/{id}', [CategoryController::class, 'update']);
+    Route::delete('/{id}', [CategoryController::class, 'destroy']);
+
+    // TODO: Tambahkan route untuk statistics dan toggle status jika Anda membuatnya di CategoryController
+    // Route::get('/statistics', [CategoryController::class, 'statistics']);
+    // Route::post('/{id}/toggle-status', [CategoryController::class, 'toggleStatus']);
+});
+
+// Tag Management Routes (Admin & Editor)
+Route::middleware(['auth:api', 'role:ADMIN,EDITOR'])->prefix('tags')->group(function () {
+    Route::get('/statistics', [TagController::class, 'statistics']);
+    Route::post('/find-or-create', [TagController::class, 'findOrCreate']);
+    Route::post('/bulk-delete', [TagController::class, 'bulkDelete']);
+    
+    // CRUD operations
+    Route::get('/', [TagController::class, 'index']);
+    Route::post('/', [TagController::class, 'store']);
+    Route::get('/{id}', [TagController::class, 'show']);
+    Route::put('/{id}', [TagController::class, 'update']);
+    Route::delete('/{id}', [TagController::class, 'destroy']);
 });
