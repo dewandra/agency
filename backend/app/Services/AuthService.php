@@ -11,17 +11,6 @@ use PHPOpenSourceSaver\JWTAuth\Facades\JWTAuth;
 
 class AuthService
 {
-    public function register(array $data): User
-    {
-        $user = User::create([
-            'name' => $data['name'],
-            'email' => $data['email'],
-            'password' => $data['password'],
-            'role' => $data['role'] ?? 'VIEWER',
-        ]);
-
-        return $user;
-    }
 
     public function login(string $email, string $password, array $deviceInfo = []): array
     {

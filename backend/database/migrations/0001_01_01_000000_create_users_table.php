@@ -16,7 +16,7 @@ return new class extends Migration
             $table->string('name');
             $table->string('email')->unique();
             $table->timestamp('email_verified_at')->nullable();
-            $table->enum('role',['admin','editor'])->default('editor');
+            $table->enum('role',['ADMIN','EDITOR'])->default('EDITOR');
             $table->boolean('is_active')->default(true);
             $table->integer('token_version')->default(0);
             $table->string('password');
