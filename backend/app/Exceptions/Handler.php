@@ -11,6 +11,8 @@ use Symfony\Component\HttpKernel\Exception\NotFoundHttpException;
 use Symfony\Component\HttpKernel\Exception\MethodNotAllowedHttpException;
 use Symfony\Component\HttpKernel\Exception\HttpException;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
+use Illuminate\Auth\Access\AuthorizationException;
+use App\Helpers\ResponseHelper;
 
 class Handler extends ExceptionHandler
 {
@@ -67,97 +69,125 @@ class Handler extends ExceptionHandler
     {
         // Authentication Exception
         if ($exception instanceof AuthenticationException) {
-            return response()->json([
-                'success' => false,
-                'message' => 'Unauthenticated. Please login first.',
-                'error' => 'authentication_required'
-            ], 401);
+            return ResponseHelper::unauthorized('Authentication required. Please login to continue.');
+        }
+
+        // Authorization Exception (403)
+        if ($exception instanceof AuthorizationException) {
+            return ResponseHelper::forbidden(
+                $exception->getMessage() ?: 'You do not have permission to perform this action.'
+            );
         }
 
         // Validation Exception
         if ($exception instanceof ValidationException) {
+            // Flatten errors to string format
+            $errors = [];
+            foreach ($exception->errors() as $field => $messages) {
+                $errors[$field] = is_array($messages) ? $messages[0] : $messages;
+            }
+            
             return response()->json([
-                'success' => false,
-                'message' => 'Validation error',
-                'errors' => $exception->errors()
+                'status' => 422,
+                'error' => 'Validation Error',
+                'details' => $errors,
             ], 422);
         }
 
         // Model Not Found Exception
         if ($exception instanceof ModelNotFoundException) {
-            return response()->json([
-                'success' => false,
-                'message' => 'Resource not found',
-                'error' => 'not_found'
-            ], 404);
+            $model = class_basename($exception->getModel());
+            return ResponseHelper::notFound($model);
         }
 
-        // Not Found Exception
+        // Not Found Exception (404)
         if ($exception instanceof NotFoundHttpException) {
-            return response()->json([
-                'success' => false,
-                'message' => 'Endpoint not found',
-                'error' => 'endpoint_not_found'
-            ], 404);
+            return ResponseHelper::error(
+                'Not Found',
+                404,
+                null,
+                'The requested endpoint does not exist.'
+            );
         }
 
-        // Method Not Allowed Exception
+        // Method Not Allowed Exception (405)
         if ($exception instanceof MethodNotAllowedHttpException) {
-            return response()->json([
-                'success' => false,
-                'message' => 'Method not allowed',
-                'error' => 'method_not_allowed'
-            ], 405);
+            return ResponseHelper::error(
+                'Method Not Allowed',
+                405,
+                null,
+                'The HTTP method used is not allowed for this endpoint.'
+            );
         }
 
         // HTTP Exception
         if ($exception instanceof HttpException) {
-            return response()->json([
-                'success' => false,
-                'message' => $exception->getMessage() ?: 'HTTP error occurred',
-                'error' => 'http_exception'
-            ], $exception->getStatusCode());
+            return ResponseHelper::error(
+                'HTTP Exception',
+                $exception->getStatusCode(),
+                null,
+                $exception->getMessage() ?: 'An HTTP error occurred.'
+            );
         }
 
         // JWT Exceptions
         if ($exception instanceof \PHPOpenSourceSaver\JWTAuth\Exceptions\TokenExpiredException) {
-            return response()->json([
-                'success' => false,
-                'message' => 'Token has expired',
-                'error' => 'token_expired'
-            ], 401);
+            return ResponseHelper::unauthorized('Your session has expired. Please login again.');
         }
 
         if ($exception instanceof \PHPOpenSourceSaver\JWTAuth\Exceptions\TokenInvalidException) {
-            return response()->json([
-                'success' => false,
-                'message' => 'Token is invalid',
-                'error' => 'token_invalid'
-            ], 401);
+            return ResponseHelper::unauthorized('Invalid authentication token.');
         }
 
         if ($exception instanceof \PHPOpenSourceSaver\JWTAuth\Exceptions\JWTException) {
-            return response()->json([
-                'success' => false,
-                'message' => 'Token error: ' . $exception->getMessage(),
-                'error' => 'token_error'
-            ], 401);
+            return ResponseHelper::unauthorized('Token error: ' . $exception->getMessage());
         }
 
-        // Default Server Error
-        $statusCode = 500;
-        $message = 'Internal server error';
-        
-        // In development, show detailed error
+        // Database Exceptions
+        if ($exception instanceof \Illuminate\Database\QueryException) {
+            // Don't expose SQL errors in production
+            if (config('app.debug')) {
+                return ResponseHelper::error(
+                    'Database Error',
+                    500,
+                    ['sql_error' => $exception->getMessage()],
+                    'A database error occurred.'
+                );
+            }
+            
+            return ResponseHelper::error(
+                'Database Error',
+                500,
+                null,
+                'A database error occurred. Please try again later.'
+            );
+        }
+
+        // Default Server Error (500)
+        $message = 'An unexpected error occurred.';
+        $details = null;
+
         if (config('app.debug')) {
             $message = $exception->getMessage();
+            $details = [
+                'exception' => get_class($exception),
+                'file' => $exception->getFile(),
+                'line' => $exception->getLine(),
+                'trace' => collect($exception->getTrace())->take(5)->map(function ($trace) {
+                    return [
+                        'file' => $trace['file'] ?? 'unknown',
+                        'line' => $trace['line'] ?? 'unknown',
+                        'function' => $trace['function'] ?? 'unknown',
+                    ];
+                })->toArray(),
+            ];
         }
 
-        return response()->json([
-            'success' => false,
-            'message' => $message,
-            'error' => 'server_error',
-            'trace' => config('app.debug') ? $exception->getTraceAsString() : null
-        ], $statusCode);
+        return ResponseHelper::error(
+            'Internal Server Error',
+            500,
+            $details,
+            $message
+        );
     }
 }

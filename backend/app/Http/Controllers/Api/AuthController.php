@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Services\AuthService;
+use App\Helpers\ResponseHelper;
 use Illuminate\Http\Request;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Facades\Validator;
@@ -18,55 +19,31 @@ class AuthController extends Controller
         $this->authService = $authService;
     }
 
-
-    public function register(Request $request): JsonResponse
-    {
-        $validator = Validator::make($request->all(), [
-            'name' => 'required|string|max:255',
-            'email' => 'required|string|email|max:255|unique:users',
-            'password' => ['required', 'confirmed', Password::min(8)->mixedCase()->numbers()],
-            'role' => 'sometimes|in:ADMIN,EDITOR,VIEWER',
-        ]);
-
-        if ($validator->fails()) {
-            return response()->json([
-                'success' => false,
-                'message' => 'Validation error',
-                'errors' => $validator->errors()
-            ], 422);
-        }
-
-        try {
-            $user = $this->authService->register($validator->validated());
-
-            return response()->json([
-                'success' => true,
-                'message' => 'User registered successfully',
-                'data' => [
-                    'user' => $user
-                ]
-            ], 201);
-        } catch (\Exception $e) {
-            return response()->json([
-                'success' => false,
-                'message' => 'Registration failed: ' . $e->getMessage()
-            ], 500);
-        }
-    }
-
-
+    /**
+     * Login user
+     * POST /api/auth/login
+     */
     public function login(Request $request): JsonResponse
     {
         $validator = Validator::make($request->all(), [
             'email' => 'required|email',
             'password' => 'required|string|min:8',
+        ], [
+            'email.required' => 'Email address is required.',
+            'email.email' => 'Please provide a valid email address.',
+            'password.required' => 'Password is required.',
+            'password.min' => 'Password must be at least 8 characters.',
         ]);
 
         if ($validator->fails()) {
+            $errors = [];
+            foreach ($validator->errors()->toArray() as $field => $messages) {
+                $errors[$field] = $messages[0];
+            }
             return response()->json([
-                'success' => false,
-                'message' => 'Validation error',
-                'errors' => $validator->errors()
+                'status' => 422,
+                'error' => 'Validation Error',
+                'details' => $errors,
             ], 422);
         }
 
@@ -82,50 +59,48 @@ class AuthController extends Controller
                 $deviceInfo
             );
 
-            return response()->json([
-                'success' => true,
-                'message' => 'Login successful',
-                'data' => $result
-            ]);
+            return ResponseHelper::success($result, 'Login successful');
         } catch (\Exception $e) {
-            return response()->json([
-                'success' => false,
-                'message' => $e->getMessage()
-            ], 401);
+            return ResponseHelper::unauthorized($e->getMessage());
         }
     }
 
+    /**
+     * Refresh access token
+     * POST /api/auth/refresh
+     */
     public function refresh(Request $request): JsonResponse
     {
         $validator = Validator::make($request->all(), [
             'refresh_token' => 'required|string',
+        ], [
+            'refresh_token.required' => 'Refresh token is required.',
         ]);
 
         if ($validator->fails()) {
+            $errors = [];
+            foreach ($validator->errors()->toArray() as $field => $messages) {
+                $errors[$field] = $messages[0];
+            }
             return response()->json([
-                'success' => false,
-                'message' => 'Validation error',
-                'errors' => $validator->errors()
+                'status' => 422,
+                'error' => 'Validation Error',
+                'details' => $errors,
             ], 422);
         }
 
         try {
             $result = $this->authService->refresh($request->refresh_token);
-
-            return response()->json([
-                'success' => true,
-                'message' => 'Token refreshed successfully',
-                'data' => $result
-            ]);
+            return ResponseHelper::success($result, 'Token refreshed successfully');
         } catch (\Exception $e) {
-            return response()->json([
-                'success' => false,
-                'message' => $e->getMessage()
-            ], 401);
+            return ResponseHelper::unauthorized($e->getMessage());
         }
     }
 
-
+    /**
+     * Logout current session
+     * POST /api/auth/logout
+     */
     public function logout(Request $request): JsonResponse
     {
         try {
@@ -134,72 +109,60 @@ class AuthController extends Controller
                 $request->input('refresh_token')
             );
 
-            return response()->json([
-                'success' => true,
-                'message' => 'Logged out successfully'
-            ]);
+            return ResponseHelper::success(null, 'Logged out successfully');
         } catch (\Exception $e) {
-            return response()->json([
-                'success' => false,
-                'message' => 'Logout failed: ' . $e->getMessage()
-            ], 500);
+            return ResponseHelper::error('Logout failed', 500, null, $e->getMessage());
         }
     }
 
-
+    /**
+     * Logout all sessions
+     * POST /api/auth/logout-all
+     */
     public function logoutAll(Request $request): JsonResponse
     {
         try {
             $this->authService->logoutAll(auth()->user());
-
-            return response()->json([
-                'success' => true,
-                'message' => 'Logged out from all devices successfully'
-            ]);
+            return ResponseHelper::success(null, 'Logged out from all devices successfully');
         } catch (\Exception $e) {
-            return response()->json([
-                'success' => false,
-                'message' => 'Logout failed: ' . $e->getMessage()
-            ], 500);
+            return ResponseHelper::error('Logout failed', 500, null, $e->getMessage());
         }
     }
 
-
+    /**
+     * Get authenticated user profile
+     * GET /api/auth/profile
+     */
     public function profile(): JsonResponse
     {
         try {
             $user = $this->authService->getProfile(auth()->user());
-
-            return response()->json([
-                'success' => true,
-                'message' => 'Profile retrieved successfully',
-                'data' => [
-                    'user' => $user
-                ]
-            ]);
+            return ResponseHelper::success($user, 'Profile retrieved successfully');
         } catch (\Exception $e) {
-            return response()->json([
-                'success' => false,
-                'message' => 'Failed to get profile: ' . $e->getMessage()
-            ], 500);
+            return ResponseHelper::error('Failed to get profile', 500, null, $e->getMessage());
         }
     }
 
-
+    /**
+     * Update user profile
+     * PUT /api/auth/profile
+     */
     public function updateProfile(Request $request): JsonResponse
     {
         $validator = Validator::make($request->all(), [
             'name' => 'sometimes|string|max:255',
             'email' => 'sometimes|email|unique:users,email,' . auth()->id(),
             'password' => ['sometimes', 'confirmed', Password::min(8)->mixedCase()->numbers()],
+        ], [
+            'name.string' => 'Name must be a valid string.',
+            'name.max' => 'Name cannot exceed 255 characters.',
+            'email.email' => 'Please provide a valid email address.',
+            'email.unique' => 'This email is already in use.',
+            'password.confirmed' => 'Password confirmation does not match.',
         ]);
 
         if ($validator->fails()) {
-            return response()->json([
-                'success' => false,
-                'message' => 'Validation error',
-                'errors' => $validator->errors()
-            ], 422);
+            return ResponseHelper::validationError($validator->errors());
         }
 
         try {
@@ -208,18 +171,9 @@ class AuthController extends Controller
                 $validator->validated()
             );
 
-            return response()->json([
-                'success' => true,
-                'message' => 'Profile updated successfully',
-                'data' => [
-                    'user' => $user
-                ]
-            ]);
+            return ResponseHelper::success($user, 'Profile updated successfully');
         } catch (\Exception $e) {
-            return response()->json([
-                'success' => false,
-                'message' => 'Failed to update profile: ' . $e->getMessage()
-            ], 500);
+            return ResponseHelper::error('Failed to update profile', 500, null, $e->getMessage());
         }
     }
 }
